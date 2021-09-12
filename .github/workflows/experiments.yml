@@ -23,3 +23,18 @@ jobs:
         path: |
           ./Experiments/load-main/macho
           ./Experiments/load-main/bundle
+
+
+    - name: Build load-foo
+      run: |
+        gcc Experiments/load-foo/bundle.c -bundle -o Experiments/load-foo/bundle.so
+        gcc Experiments/load-foo/macho.c Experiments/load-foo/main.c -o Experiments/load-foo/macho
+        ./Experiments/load-foo/macho ./Experiments/load-foo/bundle.so
+
+    - name: Publish load-foo binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: load-foo
+        path: |
+          ./Experiments/load-foo/macho
+          ./Experiments/load-foo/bundle
