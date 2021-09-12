@@ -1,0 +1,25 @@
+name: 'Experiment stuff'
+on: push
+
+jobs:
+  test:
+
+    name: Do some experiments on MacOS
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Build load-main
+      run: |
+        gcc Experiments/load-main/bundle.c -bundle -o Experiments/load-main/bundle
+        gcc Experiments/load-main/macho.c Experiments/load-main/main.c -o Experiments/load-main/macho
+        ./Experiments/load-main/macho ./Experiments/load-main/bundle
+
+    - name: Publish load-main binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: load-main
+        path: |
+          ./Experiments/load-main/macho
+          ./Experiments/load-main/bundle
