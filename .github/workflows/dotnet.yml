@@ -1,0 +1,21 @@
+name: 'Build dotnet stuff'
+on: push
+
+jobs:
+  test:
+
+    name: Test some Csharp on MacOS
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup .NET Core SDK 5.0.x
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '5.0.x'
+
+    - name: Build and run app
+      run: |
+        cd Macho
+        dotnet run -- bar.so bundle.so

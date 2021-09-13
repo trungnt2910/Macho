@@ -16,6 +16,7 @@ namespace Macho
         const uint CPU_TYPE_ARM = 12;
         const uint CPU_TYPE_ARM64 = CPU_TYPE_ARM | CPU_ARCH_ABI64;
 
+        const uint NSLINKMODULE_OPTION_NONE = 0x0;
         const uint NSLINKMODULE_OPTION_PRIVATE = 0x2;
         const uint LC_SEGMENT = 0x1;
         const uint LC_SEGMENT_64 = 0x19;
@@ -28,6 +29,7 @@ namespace Macho
         const uint MH_CIGAM_64 = 0xcffaedfe;     /* NXSwapInt(MH_MAGIC_64) */
 
         const uint MH_DYLIB	= 0x6;
+        const uint MH_BUNDLE = 0x8;
 
         [StructLayout(LayoutKind.Explicit)]
         struct lc_str
@@ -229,11 +231,14 @@ namespace Macho
         {
             void* image;
 
+            uint* type = &((uint*)data)[3];
+            *type = MH_BUNDLE;
+
             if (funcs.NSCreateObjectFileImageFromMemory(data, size, &image) != 
                     NSObjectFileImageReturnCode.NSObjectFileImageSuccess)
                 return null;
 
-            return funcs.NSLinkModule(image, "", NSLINKMODULE_OPTION_PRIVATE);
+            return funcs.NSLinkModule(image, "", NSLINKMODULE_OPTION_NONE);
         }
 
         public static unsafe void* macho_sym(void* module, string name)
