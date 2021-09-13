@@ -54,3 +54,17 @@ jobs:
           ./Experiments/load-foo-bar/macho
           ./Experiments/load-foo-bar/bundle.so
           ./Experiments/load-foo-bar/bar.so
+
+    - name: Build load-foo-lib
+      run: |
+        gcc Experiments/load-foo-lib/bundle.c -dynamiclib -o Experiments/load-foo-lib/bundle.so
+        gcc Experiments/load-foo-lib/macho.c Experiments/load-foo-lib/main.c -o Experiments/load-foo-lib/macho
+        ./Experiments/load-foo-lib/macho ./Experiments/load-foo-lib/bundle.so
+
+    - name: Publish load-foo-lib binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: load-foo-lib
+        path: |
+          ./Experiments/load-foo-lib/macho
+          ./Experiments/load-foo-lib/bundle.so
