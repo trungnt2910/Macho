@@ -36,10 +36,17 @@ static int macho_parse(mach_header_t *mh, func_t *funcs)
    // that matches our needed string, treat this as a failure
    int ret = 0;
 
+   printf("Initial position: %p\n", mh);
+   printf("Size of header: %i\n", (int)sizeof(mach_header_t));
+   printf("Size of cmd: %i\n", (int)sizeof(load_command_t));
    load_command_t *cmd = (load_command_t *)&mh[1];
+
+   printf("Cmd count: %i\n", (int)mh->ncmds);
 
    for(x = 0; x < mh->ncmds; x++)
    {
+      printf("%i\n", cmd->cmd);
+      printf("%i\n", cmd->cmdsize);
       switch(cmd->cmd)
       {
          case LC_SEGMENT_64:
@@ -60,6 +67,8 @@ static int macho_parse(mach_header_t *mh, func_t *funcs)
             dlb = (dylib_command_t *)cmd;
             char *name = (char *)cmd + dlb->dylib.name.offset;
             
+            printf("%p: %s\n", mh, name);
+
             // Is this the lib: /usr/lib/system/libdyld.dylib?
             if(hash_djb(name) == 0x8d3fccfd)
                ret = 1;
@@ -146,10 +155,13 @@ int macho_bootstrap(func_t *funcs)
 
    // We need a pointer anywhere onto the stack
    char *s = __builtin_alloca(0);
+   printf("Starting pointer: %p\n", s);
 
    // Let's find the very top of the stack
    while(is_ptr_valid((size_t)s + 1))
       s++;
+
+   printf("Top of stack: %p\n", s);
 
    for(x = 0; x < 10000; x++)
    {
@@ -177,7 +189,7 @@ int macho_bootstrap(func_t *funcs)
    return 0;
 }
 
-void *macho_load(func_t *funcs, void *data, int size)
+void *macho_load(func_t *funcs, void *data, char* name, int size)
 {
    void *image;
 
@@ -190,7 +202,7 @@ void *macho_load(func_t *funcs, void *data, int size)
    if(funcs->NSCreateObjectFileImageFromMemory(data, size, &image) != NSObjectFileImageSuccess)
       return NULL;
       
-   return funcs->NSLinkModule(image, "", NSLINKMODULE_OPTION_NONE);
+   return funcs->NSLinkModule(image, name, NSLINKMODULE_OPTION_NONE | NSLINKMODULE_OPTION_RETURN_ON_ERROR);
 }
 
 void *macho_sym(func_t *funcs, void *module, char *name)

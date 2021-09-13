@@ -12,13 +12,15 @@ namespace Macho
         static unsafe int Main(string[] args)
         {
             void* module = null;
+            Console.WriteLine(args.Length);
             foreach (var arg in args)
             {
+                Console.WriteLine($"Loading {arg}");
                 var bytes = File.ReadAllBytes(arg);
 
                 fixed (byte* data = &bytes[0])
                 {
-                    module = Macho.macho_load(data, bytes.Length);
+                    module = Macho.macho_load(data, arg, bytes.Length);
 
                     if (module == null)
                     {

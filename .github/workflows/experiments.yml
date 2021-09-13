@@ -27,8 +27,10 @@ jobs:
 
     - name: Build load-foo
       run: |
-        gcc Experiments/load-foo/bundle.c -bundle -o Experiments/load-foo/bundle.so
-        gcc Experiments/load-foo/macho.c Experiments/load-foo/main.c -o Experiments/load-foo/macho
+        cd Experiments/load-foo/
+        gcc bundle.c -bundle -o bundle.so
+        gcc macho.c main.c -o macho
+        cd ../..
         ./Experiments/load-foo/macho ./Experiments/load-foo/bundle.so
 
     - name: Publish load-foo binaries
@@ -57,8 +59,10 @@ jobs:
 
     - name: Build load-foo-lib
       run: |
-        gcc Experiments/load-foo-lib/bundle.c -dynamiclib -o Experiments/load-foo-lib/bundle.so
-        gcc Experiments/load-foo-lib/macho.c Experiments/load-foo-lib/main.c -o Experiments/load-foo-lib/macho
+        cd Experiments/load-foo-lib/
+        gcc bundle.c -dynamiclib -o bundle.so
+        gcc macho.c main.c -o macho
+        cd ../..
         ./Experiments/load-foo-lib/macho ./Experiments/load-foo-lib/bundle.so
 
     - name: Publish load-foo-lib binaries
@@ -71,10 +75,12 @@ jobs:
 
     - name: Build load-foo-bar-lib
       run: |
-        gcc Experiments/load-foo-bar-lib/bar.c -dynamiclib -o Experiments/load-foo-bar-lib/bar.so 
-        gcc Experiments/load-foo-bar-lib/bundle.c -dynamiclib -o Experiments/load-foo-bar-lib/bundle.so Experiments/load-foo-bar-lib/bar.so
-        gcc Experiments/load-foo-bar-lib/macho.c Experiments/load-foo-bar-lib/main.c -o Experiments/load-foo-bar-lib/macho
-        ./Experiments/load-foo-bar-lib/macho ./Experiments/load-foo-bar-lib/bar.so ./Experiments/load-foo-bar-lib/bundle.so
+        cd Experiments/load-foo-bar-lib/
+        gcc bar.c -dynamiclib -o bar.so 
+        gcc bundle.c -dynamiclib -o bundle.so bar.so
+        gcc macho.c main.c -o macho
+        cd ../..
+        ./Experiments/load-foo-bar-lib/macho ./Experiments/load-foo-bar-lib/bar.so bar.so ./Experiments/load-foo-bar-lib/bundle.so bundle.so
 
     - name: Publish load-foo-bar-lib binaries
       uses: actions/upload-artifact@v2

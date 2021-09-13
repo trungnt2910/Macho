@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Macho
 {
@@ -18,6 +21,7 @@ namespace Macho
 
         const uint NSLINKMODULE_OPTION_NONE = 0x0;
         const uint NSLINKMODULE_OPTION_PRIVATE = 0x2;
+        const uint NSLINKMODULE_OPTION_RETURN_ON_ERROR = 0x4;
         const uint LC_SEGMENT = 0x1;
         const uint LC_SEGMENT_64 = 0x19;
         const uint LC_ID_DYLIB = 0xd;
@@ -165,7 +169,7 @@ namespace Macho
         unsafe delegate void* ptr_NSLinkModule(
             void* objectFileImage, 
             [MarshalAs(UnmanagedType.LPStr)] string moduleName, 
-            uint options);
+            UIntPtr options);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         unsafe delegate void* ptr_NSLookupSymbolInModule(
             void* module, 
@@ -186,16 +190,21 @@ namespace Macho
 
         static Macho()
         {
-            if (!macho_bootstrap(out funcs))
+            if (!macho_bootstrap2(out funcs))
             {
                 throw new InvalidOperationException("Couldn't find libdyld in memory.");
             }
+
+            Console.WriteLine("Okay..");
         }
 
         static unsafe bool macho_bootstrap(out func_t f)
         {
             // We need a pointer anywhere onto the stack
-            byte* s = stackalloc byte[1];
+            byte* s = stackalloc byte[16];
+            Console.WriteLine($"Starting pointer: 0x{(ulong)s:x}");
+
+            Debug.Assert(is_ptr_valid((UIntPtr)s));
 
             // Let's find the very top of the stack
             while (is_ptr_valid((UIntPtr)s + 1))
@@ -203,7 +212,9 @@ namespace Macho
                 ++s;
             }
 
-            for (int x = 0; x < 10000; ++x)
+            Console.WriteLine($"Top of stack: 0x{(ulong)s:x}");
+
+            for (uint x = 0; true; x += PAGE_SIZE)
             {
                 // Walk down the stack, one byte at a time
                 UIntPtr* ptr = (UIntPtr*)(s - x);
@@ -219,8 +230,15 @@ namespace Macho
                 // of a mach-o file
                 for (int y = 0; y < 100; ++y)
                 {
-                    if (is_ptr_valid(addr) && is_macho(addr) && macho_parse((mach_header_t*)addr, out f))
-                        return true;
+                    try
+                    {
+                        if (is_ptr_valid(addr) && is_macho(addr) && macho_parse((mach_header_t*)addr, out f))
+                            return true;
+                    }
+                    catch (NullReferenceException e)
+                    {
+                        Console.WriteLine(e);
+                    }
 
                     UIntPtr.Subtract(addr, (int)PAGE_SIZE);
                 }
@@ -230,7 +248,173 @@ namespace Macho
             return false;
         }
 
-        public static unsafe void* macho_load(void* data, int size)
+        const ulong EXECUTABLE_BASE_ADDR = 0x100000000;
+        const ulong DYLD_BASE = 0x00007fff5fc00000;
+
+        private static int IS_SIERRA = -1;
+
+        private static bool is_sierra()
+        {
+            if (IS_SIERRA == -1)
+            {
+                // To-Do: Check official mac APIs
+                IS_SIERRA = 1;
+	        }
+	        return Convert.ToBoolean(IS_SIERRA);
+        }
+
+        private static unsafe bool find_macho(out func_t f, ulong addr, out ulong output, uint increment, bool deref = false)
+        {
+            ulong ptr;
+
+            // find a Mach-O header by searching from address.
+            output = 0;
+
+            while (true)
+            {
+                ptr = addr;
+
+                if (!is_ptr_valid((UIntPtr)ptr))
+                {
+                    Console.WriteLine($"Invalid ptr: 0x{ptr:x}");
+                    goto bail;
+                }
+
+                if (deref)
+                {
+                    if (is_ptr_valid((UIntPtr)ptr))
+                    {
+                        ptr = *(ulong*)ptr;
+                    }
+                    else
+                    {
+                        goto bail;
+                    }
+                }
+
+                Console.WriteLine($"0x{ptr:x} = {*(uint*)ptr}, MACHO_MACH = {MACHO_MAGIC}");
+
+                if (is_ptr_valid((UIntPtr)ptr) && is_macho((UIntPtr)ptr) && macho_parse((mach_header_t*)ptr, out f))
+                {
+                    return true;
+                }
+
+            bail:
+                addr += increment;
+            }
+
+            return false;
+        }
+
+        static unsafe bool macho_bootstrap1(out func_t f)
+        {
+            f = null;
+
+            ulong binary, dyld;
+
+            var pid = Process.GetCurrentProcess().Id;
+            var cmd = new ProcessStartInfo()
+            {
+                FileName = "vmmap",
+                Arguments = $"{pid}",
+                UseShellExecute = true
+            };
+
+            var proc = Process.Start(cmd);
+            proc.WaitForExit();
+
+            if (is_sierra())
+            {
+                Console.WriteLine("Finding start binary...");
+                if (!find_macho(out f, EXECUTABLE_BASE_ADDR, out dyld, 0x1000)) return false;
+                //Console.WriteLine($"Start binary found at: 0x{binary:x}");
+                //if (!find_macho(binary + 0x1000, out dyld, 0x1000)) return false;
+                //Console.WriteLine($"Dyld found at: 0x{dyld:x}");
+                return true;
+            }
+            else
+            {
+                if (!find_macho(out f, DYLD_BASE, out dyld , 0x1000)) return false;
+                return true;
+            }
+
+            //return macho_parse((mach_header_t*)dyld, out f);
+        }
+
+        static unsafe bool macho_bootstrap2(out func_t f)
+        {
+            Console.WriteLine("Bootstrapping...");
+
+            var pid = Process.GetCurrentProcess().Id;
+            var cmd = new ProcessStartInfo()
+            {
+                FileName = "vmmap",
+                Arguments = $"{pid}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true
+            };
+
+            var proc = Process.Start(cmd);
+
+            try
+            {
+                while (true)
+                {
+                    var current = proc.StandardOutput.ReadLine();
+                    if (current == null)
+                    {
+                        break;
+                    }
+
+                    Console.WriteLine(current);
+
+                    const string dylibName = "/usr/lib/system/libdyld.dylib";
+                    var idx = current.IndexOf(dylibName);
+
+                    if (idx == -1)
+                    {
+                        continue;
+                    }
+
+                    if (idx != 0 && !char.IsWhiteSpace(current[idx - 1]))
+                    {
+                        continue;
+                    }
+
+                    if (idx + dylibName.Length < current.Length && !char.IsWhiteSpace(current[idx + dylibName.Length]))
+                    {
+                        continue;
+                    }
+
+                    Console.WriteLine("Good match.");
+
+                    var match = Regex.Match(current, "\\s([\\da-f]*)-([\\da-f]*)\\s");
+
+                    if (match.Success)
+                    {
+                        ulong addr = ulong.Parse(match.Groups[1].Value, NumberStyles.HexNumber);
+                        Console.WriteLine($"Found dylib at: 0x{addr:x}");
+                        Console.WriteLine($"Magic number: {*(uint *)addr}");
+                        Console.WriteLine($"MACHO_MAGIC: {MACHO_MAGIC}");
+                        Console.WriteLine("parsing...");
+                        var result = macho_parse((mach_header_t*)addr, out f);
+                        Console.WriteLine("Returning from bootstrap...");
+                        return result;
+                    }
+                }
+            }
+            finally
+            {
+                proc.Kill();
+                proc.WaitForExit();
+                proc.Dispose();
+                Console.WriteLine("LMAO Finally");
+            }
+
+            throw new NotImplementedException();
+        }
+
+        public static unsafe void* macho_load(void* data, string name, int size)
         {
             void* image;
 
@@ -241,7 +425,8 @@ namespace Macho
                     NSObjectFileImageReturnCode.NSObjectFileImageSuccess)
                 return null;
 
-            return funcs.NSLinkModule(image, "", NSLINKMODULE_OPTION_NONE);
+            Console.WriteLine("Preparing to link module...");
+            return funcs.NSLinkModule(image, name, (UIntPtr)(NSLINKMODULE_OPTION_NONE | NSLINKMODULE_OPTION_RETURN_ON_ERROR));
         }
 
         public static unsafe void* macho_sym(void* module, string name)
@@ -259,14 +444,25 @@ namespace Macho
             return funcs.NSAddressOfSymbol(symbol);
         }
 
-        private static bool is_ptr_valid(UIntPtr ptr)
+        private static unsafe bool is_ptr_valid(UIntPtr ptr)
         {
-            if (_fd == 0)
-            {
-                _fd = open("/dev/random/", O_WRONLY);                   
-            }
+            //if (_fd == 0)
+            //{
+            //    _fd = open("/dev/random", O_WRONLY);
+            //    Console.WriteLine($"Random file descriptor: {_fd}");
+            //}
 
-            if ((long)write(_fd, (IntPtr)(ulong)ptr, (UIntPtr)IntPtr.Size) == IntPtr.Size)
+            //if ((long)write(_fd, (IntPtr)(ulong)ptr, (UIntPtr)IntPtr.Size) == IntPtr.Size)
+            //{
+            //    return true;
+            //}
+
+            int ret = chmod((void*)ptr, 0777);
+            int errno = Marshal.GetLastWin32Error();
+            Console.WriteLine(errno);
+            Console.WriteLine(ret);
+
+            if (errno != 14) // Not fault
             {
                 return true;
             }
@@ -279,14 +475,20 @@ namespace Macho
             mach_header_t* mh = (mach_header_t*)ptr;
 
             // Is this a valid mach-o dylib file?
-            if (mh->magic == MACHO_MAGIC && mh->filetype == MH_DYLIB && mh->cputype == CPU_TYPE)
+            if (mh->magic == MACHO_MAGIC && /*mh->filetype == MH_DYLIB &&*/ mh->cputype == CPU_TYPE)
                 return true;
+
+            Console.WriteLine("Invalid macho file?");
+            Console.WriteLine($"Filetype: {mh->filetype}, CpuType: {mh->cputype}.");
+            Console.WriteLine($"Expected: {MH_DYLIB}, {CPU_TYPE}");
 
             return false;
         }
 
         private static unsafe bool macho_parse(mach_header_t* mh, out func_t f)
         {
+            Console.WriteLine("Parsing...");
+
             f = new func_t();
 
             int x, y;
@@ -304,10 +506,17 @@ namespace Macho
             // that matches our needed string, treat this as a failure
             var found = false;
 
+            Console.WriteLine($"Size of header: {sizeof(mach_header_t)}");
+            Console.WriteLine($"Size of cmd: {sizeof(load_command_t)}");
             load_command_t* cmd = (load_command_t*)&mh[1];
+
+            Console.WriteLine("Parsing commands...");
+            Console.WriteLine(mh->ncmds);
 
             for (x = 0; x < mh->ncmds; x++)
             {
+                Console.WriteLine(cmd->cmd);
+                Console.WriteLine(cmd->cmdsize);
                 switch (cmd->cmd)
                 {
                     case LC_SEGMENT_64:
@@ -328,9 +537,17 @@ namespace Macho
                         dlb = (dylib_command_t*)cmd;
                         byte* name = (byte*)cmd + dlb->dylib.name.offset;
 
+                        Console.WriteLine($"0x{(ulong)name:x}: {Marshal.PtrToStringAnsi((IntPtr)name)}");
+
                         // Is this the lib: /usr/lib/system/libdyld.dylib?
                         if (hash_djb(name) == 0x8d3fccfd)
+                        {
                             found = true;
+                        }
+                        else
+                        {
+                            return false;
+                        }
 
                         break;
 
@@ -377,7 +594,7 @@ namespace Macho
                         break;
                 }
 
-                cmd = (load_command_t*)((char*)cmd + cmd->cmdsize);
+                cmd = (load_command_t*)((byte*)cmd + cmd->cmdsize);
             }
 
             // We found libdyld.lib, and we are done
@@ -412,5 +629,8 @@ namespace Macho
 
         [DllImport("libc")]
         private static extern IntPtr write(int fildes, IntPtr buf, UIntPtr nbyte);
+
+        [DllImport("libc", SetLastError = true)]
+        private static unsafe extern int chmod(void* path, ushort mode);
     }
 }

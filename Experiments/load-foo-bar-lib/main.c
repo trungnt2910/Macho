@@ -18,8 +18,11 @@ int main(int argc, char *argv[])
    int i;
    void* module;
 
-   for (i = 1; i < argc; ++i)
+   for (i = 1; i < argc; i += 2)
    {
+      printf("Loading %s as %s...\n", argv[i], argv[i + 1]);
+      fflush(stdout);
+
       // Load the bundle into memory
       int fd = open(argv[i], O_RDONLY, 0);
 
@@ -30,14 +33,17 @@ int main(int argc, char *argv[])
       read(fd, data, size);
 
       // Load the module
-      module = macho_load(&funcs, data, size);
+      module = macho_load(&funcs, data, argv[i + 1], size);
 
       if(!module)
       {
-         printf("Couldn't load the module\n");
+         printf("Couldn't load the module: %s...\n", argv[i]);
          return 0;
       }
    }
+
+   printf("Done.\n");
+   fflush(stdout);
 
    // Find the symbol
    int (*f)() = macho_sym(&funcs, module, "_foo");

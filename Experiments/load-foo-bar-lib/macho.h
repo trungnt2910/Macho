@@ -32,6 +32,7 @@
 
 #define NSLINKMODULE_OPTION_NONE 0x0
 #define NSLINKMODULE_OPTION_PRIVATE 0x2
+#define NSLINKMODULE_OPTION_RETURN_ON_ERROR 0x4
 #define LC_SEGMENT      0x1
 #define LC_SEGMENT_64   0x19
 #define LC_ID_DYLIB     0xd
@@ -219,8 +220,8 @@ typedef struct
    ptr_NSAddressOfSymbol NSAddressOfSymbol;
 } func_t;
 
-int macho_bootstrap(func_t *funcs);;
-void *macho_load(func_t *funcs, void *data, int size);
+int macho_bootstrap(func_t *funcs);
+void *macho_load(func_t *funcs, void *data, char* name, int size);
 void *macho_sym(func_t *funcs, void *module, char *name);
 
 #endif // _MACHO_H_
