@@ -31,6 +31,8 @@ namespace Macho
         const uint MH_DYLIB	= 0x6;
         const uint MH_BUNDLE = 0x8;
 
+        const int O_WRONLY = 0x0001;
+
         [StructLayout(LayoutKind.Explicit)]
         struct lc_str
         {
@@ -180,6 +182,7 @@ namespace Macho
         }
 
         static readonly func_t funcs;
+        private static int _fd = 0;
 
         static Macho()
         {
@@ -258,7 +261,17 @@ namespace Macho
 
         private static bool is_ptr_valid(UIntPtr ptr)
         {
-            throw new NotImplementedException("Do some research first <(\")");
+            if (_fd == 0)
+            {
+                _fd = open("/dev/random/", O_WRONLY);                   
+            }
+
+            if ((long)write(_fd, (IntPtr)(ulong)ptr, (UIntPtr)IntPtr.Size) == IntPtr.Size)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static unsafe bool is_macho(UIntPtr ptr)
@@ -393,5 +406,11 @@ namespace Macho
         {
             return val & ~(align - 1);
         }
+
+        [DllImport("libc")]
+        private static extern int open([MarshalAs(UnmanagedType.LPStr)] string path, int oflag);
+
+        [DllImport("libc")]
+        private static extern IntPtr write(int fildes, IntPtr buf, UIntPtr nbyte);
     }
 }
